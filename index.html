@@ -321,7 +321,7 @@
         <div class="warn" id="lStale" hidden>No update for a while. The backend window may have been closed.</div>
         <div class="warn" id="lHint" hidden>The local backend was not found. Download it, double-click it, then keep its black window open - this page connects by itself.
           <div style="margin-top:10px"><a class="dlbtn primary" href="MJ_Dashboard_Backend.bat" download>&#11015; Download backend (.bat)</a></div>
-          <div style="margin-top:8px;opacity:.85">Already running? On the very first run Windows asks once to trust a certificate - click Yes. Use Chrome or Edge.</div>
+          <div style="margin-top:8px;opacity:.85">Already running? Use Chrome or Edge, and allow the browser's one-time "local network access" prompt if it appears.</div>
         </div>
         <div class="ltip">Read-only. Nothing in your mailbox is changed. Keep the backend window open.</div>
       </section>
@@ -463,7 +463,7 @@ window.CATEGORY_RULES=[
   var MON=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
   var DOW=["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
   var fails=0;
-  var BACKEND="https://localhost:47615";
+  var BACKEND="http://localhost:47615";
   var runId="",token="",syncSeq=0,syncFails=0,syncTimer=null,toastTimer=null;
   var lastStatus=null,firstRender=true,toolbarBuilt=false;
   var model={cats:[],sel:-1,full:[],all:[],from:"",to:"",marked:{},gran:"day",sendScope:"all"};

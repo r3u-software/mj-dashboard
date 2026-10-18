@@ -3,9 +3,8 @@ REM ==================================================================
 REM  MJ Dashboard - local backend (single file)
 REM  Double-click. It reads Outlook on THIS PC (read-only: no email is
 REM  ever changed or deleted) and serves the live dashboard page over
-REM  https://localhost. Keep the black window open while you use it.
-REM  First run: Windows asks once to trust a certificate - click Yes.
-REM  No admin rights needed.
+REM  http://localhost (no certificate, no prompts). Keep the black
+REM  window open while you use it. No admin rights needed.
 REM ==================================================================
 setlocal
 set "MJ_SELF=%~f0"
@@ -56,6 +55,8 @@ param(
     [string]$AllowOrigin = "https://r3u-software.github.io",
     [int]$SyncSeconds = 30,
     [switch]$NoBrowser,
+    # serve HTTPS with a self-signed cert instead of plain http://localhost (asks Windows once to trust it)
+    [switch]$Https,
     # developer switches (not used by the .bat): fake mailbox / skip the trust-store prompt
     [switch]$Demo,
     [switch]$SkipTrust
@@ -67,12 +68,11 @@ param(
 #
 #  The dashboard page lives on GitHub Pages (HTTPS). This script runs
 #  on your PC, reads Outlook, and answers the page over HTTPS on
-#  https://localhost:<Port>
-#
-#  - First run: creates a self-signed certificate for "localhost" and
-#    adds it to YOUR Windows certificate store (Current User only, so
-#    no administrator rights). Windows asks you to confirm once.
-#    Later runs reuse it silently.
+#  http://localhost:<Port>. Browsers treat localhost as a secure origin,
+#  so an HTTPS page may call it: no certificate, no Windows prompt,
+#  no admin rights.
+#  (-Https: serves a self-signed certificate instead, stored for the
+#  current user only; Windows asks once to trust it.)
 #  - Scans the Inbox (and subfolders) of every mailbox in the Outlook
 #    profile, whole mailbox, no date limit
 #  - Every SyncSeconds (30) after the first scan it asks Outlook for
@@ -309,8 +309,12 @@ function Handle-Client($client) {
     try {
         $client.ReceiveTimeout = 3000
         $client.SendTimeout = 15000
-        $ssl = New-Object System.Net.Security.SslStream($client.GetStream(), $false)
-        $ssl.AuthenticateAsServer($script:cert, $false, [System.Security.Authentication.SslProtocols]::Tls12, $false)
+        if ($script:cert) {
+            $ssl = New-Object System.Net.Security.SslStream($client.GetStream(), $false)
+            $ssl.AuthenticateAsServer($script:cert, $false, [System.Security.Authentication.SslProtocols]::Tls12, $false)
+        } else {
+            $ssl = $client.GetStream()
+        }
 
         $buf = New-Object byte[] 4096
         $text = ""
@@ -545,8 +549,8 @@ function Sync-NewMail {
 # =============================== START ===============================
 Write-Host "MJ Dashboard backend v$VERSION"
 
-# 1. certificate
-$script:cert = Ensure-Cert
+# 1. certificate (only with -Https)
+if ($Https) { $script:cert = Ensure-Cert }
 
 # 2. Outlook (exit code 2 = let the .bat retry with 64-bit PowerShell)
 if (-not $Demo) {
@@ -568,7 +572,7 @@ try {
     Write-Host ("ERROR: port $Port is busy. The backend is probably already running in another window - close that one first.")
     exit 1
 }
-Write-Host "Listening on https://localhost:$Port (this PC only)"
+Write-Host ("Listening on " + $(if ($script:cert) { "https" } else { "http" }) + "://localhost:$Port (this PC only)")
 
 # 4. open the hosted dashboard
 if ($DashboardUrl -and -not $NoBrowser) { try { Start-Process $DashboardUrl } catch { } }
