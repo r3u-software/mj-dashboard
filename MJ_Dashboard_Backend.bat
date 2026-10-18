@@ -131,6 +131,7 @@ $script:known = New-Object 'System.Collections.Generic.HashSet[string]'
 $script:seq = 0
 $script:storeIds = @{}
 $script:folderCounts = @{}
+$script:lastRelaunch = [DateTime]::MinValue
 $script:listener = $null
 $script:cert = $null
 $script:lastPump = [DateTime]::MinValue
@@ -516,11 +517,21 @@ function Sync-NewMail {
             if (Add-NewRow $row) { $added++ }
         }
     } else {
-        # never start Outlook just for a background check
-        if (-not (Get-Process -Name OUTLOOK -ErrorAction SilentlyContinue)) { return }
         $cycle = Get-Date
         try {
-            $nsx = Get-OutlookNs
+            # Outlook was closed: start it again (in the background) so auto-sync keeps working.
+            # Retried at most once a minute while Outlook is still loading.
+            $wasClosed = -not [bool](Get-Process -Name OUTLOOK -ErrorAction SilentlyContinue)
+            if ($wasClosed) {
+                if (([DateTime]::Now - $script:lastRelaunch).TotalSeconds -lt 60) { return }
+                $script:lastRelaunch = [DateTime]::Now
+                Write-Host ("{0}  Outlook is closed - starting it again..." -f (Get-Date -Format "HH:mm:ss"))
+                $nsx = Get-OutlookNs -Force
+                $script:folderCounts.Clear()   # re-check every folder once it is back
+                Start-Sleep -Seconds 5
+            } else {
+                $nsx = Get-OutlookNs
+            }
             # Outlook can download mail late (account catching up, was offline) and the email keeps its
             # ORIGINAL received time, so "since the last check" would miss it. Instead: when a folder's
             # item count changed, look back $LOOKBACK_DAYS days and keep whatever is not known yet.
