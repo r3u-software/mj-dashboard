@@ -92,7 +92,8 @@ $SKIP_FOLDERS = @("Deleted Items", "Junk Email", "Junk E-mail", "Drafts", "Sent 
                   "Conflicts", "Sync Issues", "Local Failures", "Server Failures", "RSS Feeds")
 
 $CERT_SUBJECT = "CN=MJ Dashboard Local"
-$VERSION = "2.0"
+$VERSION = "2.1"
+$LOOKBACK_DAYS = 7
 
 # -------------------------------------------------------------------
 
@@ -129,6 +130,7 @@ $script:newRows = New-Object System.Collections.ArrayList
 $script:known = New-Object 'System.Collections.Generic.HashSet[string]'
 $script:seq = 0
 $script:storeIds = @{}
+$script:folderCounts = @{}
 $script:listener = $null
 $script:cert = $null
 $script:lastPump = [DateTime]::MinValue
@@ -519,22 +521,33 @@ function Sync-NewMail {
         $cycle = Get-Date
         try {
             $nsx = Get-OutlookNs
-            $since = $script:lastSync.AddMinutes(-3)    # overlap; duplicates are dropped by EntryID
-            $filter = "[ReceivedTime] >= '" + $since.ToString("MM/dd/yyyy hh:mm tt", $inv) + "'"
+            # Outlook can download mail late (account catching up, was offline) and the email keeps its
+            # ORIGINAL received time, so "since the last check" would miss it. Instead: when a folder's
+            # item count changed, look back $LOOKBACK_DAYS days and keep whatever is not known yet.
+            $cutoff = $cycle.AddDays(-$LOOKBACK_DAYS)   # no Restrict(): its date text is parsed by Windows regional settings
             $folders = New-Object System.Collections.ArrayList
             foreach ($t in (Get-Targets $nsx)) { Walk-Folders $t.Folder $t.Mailbox "" $folders }
             foreach ($f in $folders) {
                 Pump-Http
                 try {
-                    $items = $f.Folder.Items.Restrict($filter)
-                    foreach ($itm in $items) {
+                    $key = $f.Mailbox + "|" + $f.Path
+                    $cnt = [int]$f.Folder.Items.Count
+                    if ($script:folderCounts.ContainsKey($key) -and $script:folderCounts[$key] -eq $cnt) { continue }
+                    $items = $f.Folder.Items
+                    $items.Sort("[ReceivedTime]", $true)
+                    $itm = $items.GetFirst()
+                    while ($itm) {
                         try {
-                            if ($itm.Class -eq 43) { if (Add-NewRow (New-Row $itm $f.Mailbox $f.Path)) { $added++ } }
+                            if ($itm.ReceivedTime -lt $cutoff) { break }
+                            if ($itm.Class -eq 43 -and -not $script:known.Contains([string]$itm.EntryID)) {
+                                if (Add-NewRow (New-Row $itm $f.Mailbox $f.Path)) { $added++ }
+                            }
                         } catch { }
+                        $itm = $items.GetNext()
                     }
+                    $script:folderCounts[$key] = $cnt
                 } catch { }
             }
-            $script:lastSync = $cycle
         } catch {
             Write-Host ("Auto-refresh skipped: " + $_.Exception.Message)
             return
