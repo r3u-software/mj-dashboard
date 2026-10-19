@@ -92,8 +92,11 @@ $SKIP_FOLDERS = @("Deleted Items", "Junk Email", "Junk E-mail", "Drafts", "Sent 
                   "Conflicts", "Sync Issues", "Local Failures", "Server Failures", "RSS Feeds")
 
 $CERT_SUBJECT = "CN=MJ Dashboard Local"
-$VERSION = "2.1"
+$VERSION = "2.2"
 $LOOKBACK_DAYS = 7
+# Outlook item classes that count as "email": 43 mail, 53 meeting request, 54/55/56 meeting
+# accepted/declined/tentative, 46 delivery report (bounces). Meeting invites arrive as 53, not 43.
+$MAIL_CLASSES = @(43, 53, 54, 55, 56, 46)
 
 # -------------------------------------------------------------------
 
@@ -550,7 +553,7 @@ function Sync-NewMail {
                     while ($itm) {
                         try {
                             if ($itm.ReceivedTime -lt $cutoff) { break }
-                            if ($itm.Class -eq 43 -and -not $script:known.Contains([string]$itm.EntryID)) {
+                            if (($MAIL_CLASSES -contains [int]$itm.Class) -and -not $script:known.Contains([string]$itm.EntryID)) {
                                 if (Add-NewRow (New-Row $itm $f.Mailbox $f.Path)) { $added++ }
                             }
                         } catch { }
@@ -671,7 +674,7 @@ try {
             foreach ($itm in $rec.Items) {
                 $processed++
                 try {
-                    if ($itm.Class -eq 43) {
+                    if ($MAIL_CLASSES -contains [int]$itm.Class) {
                         $row = New-Row $itm $rec.Mailbox $rec.Path
                         [void]$script:allRows.Add($row)
                         if ($row.EntryID) { [void]$script:known.Add($row.EntryID) }
